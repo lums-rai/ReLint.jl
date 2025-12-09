@@ -368,6 +368,7 @@ struct ConstGlobalMissingTypeRule <: ViolationLintRule end
 struct IsNothingPerformanceRule <: RecommendationLintRule end
 struct MissingAutoHashEqualsRule <: RecommendationLintRule end
 struct NotFullyParameterizedConstructorRule <: ViolationLintRule end
+struct NonConcreteFieldTypeRule <: ViolationLintRule end
 struct ClosureCaptureByValueRule <: RecommendationLintRule end
 
 include("text_lint_rules.jl")
@@ -1106,5 +1107,150 @@ function check(t::ClosureCaptureByValueRule, x::EXPR, markers::Dict{Symbol,Strin
         # Note: This is a recommendation, not an error, as capture-by-reference is sometimes correct
         msg = "Nested function may capture variables by reference, causing boxing and type instability. Consider using `let x = x` to capture by value for better performance. [Explanation](https://github.com/RelationalAI/RAIStyle#closure-capture-performance)"
         seterror!(x, LintRuleReport(t, msg))
+    end
+end
+
+# Known abstract types that commonly appear in struct fields
+const ABSTRACT_TYPES = Set([
+    "AbstractArray", "AbstractVector", "AbstractMatrix",
+    "AbstractString", "AbstractDict", "AbstractSet",
+    "Number", "Real", "Integer", "Signed", "Unsigned",
+    "AbstractFloat", "Rational", "Complex",
+    "IO", "AbstractChannel",
+    "Tuple", "AbstractRange",
+    "Any", "Union"
+])
+
+function check(t::NonConcreteFieldTypeRule, x::EXPR, markers::Dict{Symbol,String})
+    # Only check struct definitions
+    if headof(x) !== :struct
+        return
+    end
+
+    # Skip test files
+    if haskey(markers, :filename)
+        contains(markers[:filename], "test/") && return
+        contains(markers[:filename], "test.jl") && return
+    end
+
+    # Get struct name (for better error messages)
+    struct_name = fetch_value(x, :IDENTIFIER)
+    if isnothing(struct_name)
+        return  # No struct name found
+    end
+
+    # The struct AST has this structure:
+    # [1] = STRUCT keyword
+    # [2] = mutable flag (TRUE/FALSE)
+    # [3] = struct name (IDENTIFIER or curly for parameterized)
+    # [4] = block (field definitions)
+    # [5] = END keyword
+
+    if length(x) < 4
+        return
+    end
+
+    # Get the type parameters if this is a parameterized struct
+    type_params = Set{String}()
+    struct_name_node = x[3]
+    if headof(struct_name_node) === :curly
+        # Parameterized struct like Foo{T, Z}
+        # [1] = struct name, [2] = LBRACE, [3..end-1] = parameters, [end] = RBRACE
+        for i in 3:(length(struct_name_node)-1)
+            param_node = struct_name_node[i]
+            if headof(param_node) === :IDENTIFIER
+                param_name = valof(param_node)
+                !isnothing(param_name) && push!(type_params, param_name)
+            end
+        end
+    end
+
+    # Get the block of field definitions
+    field_block = x[4]
+    if headof(field_block) !== :block
+        return
+    end
+
+    # Check each field definition
+    for field_node in field_block
+        if contains(string(headof(field_node)), "::") && length(field_node) >= 3
+            # Field with type annotation: fieldname::Type
+            # [1] = field name
+            # [2] = :: operator
+            # [3] = type expression
+
+            type_expr = field_node[3]
+            check_field_type(t, type_expr, type_params, struct_name, field_node)
+        end
+    end
+end
+
+function check_field_type(rule::NonConcreteFieldTypeRule, type_expr::EXPR, type_params::Set{String}, struct_name, field_node::EXPR)
+    # Check if the type is likely to be abstract/non-concrete
+
+    if headof(type_expr) === :IDENTIFIER
+        type_name = valof(type_expr)
+
+        if isnothing(type_name)
+            return
+        end
+
+        # If it's a type parameter, it might be okay (depends on usage)
+        # But we should warn that it should be constrained to concrete types
+        if type_name in type_params
+            msg = "Type parameter `$(type_name)` used as field type in struct `$(struct_name)`. Consider constraining it to concrete types in the constructor with `@assert isconcretetype($(type_name))` for better performance. [Explanation](https://github.com/RelationalAI/RAIStyle#performance-tips)"
+            seterror!(field_node, LintRuleReport(rule, msg))
+            return
+        end
+
+        # Check if it's a known abstract type
+        if type_name in ABSTRACT_TYPES
+            field_name = ""
+            if length(field_node) >= 1 && headof(field_node[1]) === :IDENTIFIER
+                field_name = valof(field_node[1])
+                field_name = isnothing(field_name) ? "" : " `$(field_name)`"
+            end
+
+            msg = "Field$(field_name) has abstract type `$(type_name)` in struct `$(struct_name)`. This causes type instability. Use a concrete type or parameterize the struct. [Explanation](https://github.com/RelationalAI/RAIStyle#performance-tips)"
+            seterror!(field_node, LintRuleReport(rule, msg))
+        end
+    elseif headof(type_expr) === :curly
+        # Parameterized type like Vector{T} or Dict{K,V}
+        # Check if the base type has non-parameterized abstract types
+        # For example: Vector (without {T}) would be caught above
+        # Vector{T} is fine if T is a concrete type or type parameter
+
+        # Get the base type
+        if length(type_expr) >= 1
+            base_type_node = type_expr[1]
+            if headof(base_type_node) === :IDENTIFIER
+                base_type = valof(base_type_node)
+
+                # Check the type parameters
+                for i in 3:(length(type_expr)-1)
+                    param = type_expr[i]
+                    if headof(param) === :IDENTIFIER
+                        param_name = valof(param)
+                        if !isnothing(param_name)
+                            field_name = ""
+                            if length(field_node) >= 1 && headof(field_node[1]) === :IDENTIFIER
+                                field_name = valof(field_node[1])
+                                field_name = isnothing(field_name) ? "" : " `$(field_name)`"
+                            end
+
+                            # Check if it's an abstract type that's NOT a struct type parameter
+                            if param_name in ABSTRACT_TYPES && !(param_name in type_params)
+                                msg = "Field$(field_name) has parameterized type with abstract parameter `$(param_name)` in struct `$(struct_name)`. Use concrete type parameters for better performance. [Explanation](https://github.com/RelationalAI/RAIStyle#performance-tips)"
+                                seterror!(field_node, LintRuleReport(rule, msg))
+                            # Check if it's a struct type parameter (needs concrete type constraint)
+                            elseif param_name in type_params
+                                msg = "Field$(field_name) uses type parameter `$(param_name)` in struct `$(struct_name)`. Consider constraining it to concrete types in the constructor with `@assert isconcretetype($(param_name))` for better performance. [Explanation](https://github.com/RelationalAI/RAIStyle#performance-tips)"
+                                seterror!(field_node, LintRuleReport(rule, msg))
+                            end
+                        end
+                    end
+                end
+            end
+        end
     end
 end
