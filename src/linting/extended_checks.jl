@@ -994,6 +994,14 @@ function check(t::MissingAutoHashEqualsRule, x::EXPR, markers::Dict{Symbol,Strin
         contains(markers[:filename], "test.jl") && return
     end
 
+    # Check if it's a mutable struct
+    # Mutable struct AST: [1] = MUTABLE keyword, [2] = STRUCT keyword, length = 6
+    # Immutable struct AST: [1] = STRUCT keyword, [2] = FALSE, length = 5
+    if length(x) >= 1 && headof(x[1]) === :MUTABLE
+        # Skip mutable structs - they shouldn't use @auto_hash_equals
+        return
+    end
+
     # Get the struct name
     struct_name = fetch_value(x, :IDENTIFIER)
     isnothing(struct_name) && return
