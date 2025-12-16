@@ -925,7 +925,7 @@ function check(t::GlobalMissingTypeRule, x::EXPR, markers::Dict{Symbol,String})
         contains(markers[:filename], "test.jl") && return
     end
 
-    if !haskey(markers, :global)
+    if !haskey(markers, :global) || haskey(markers, :global) && haskey(markers, :function)
         return
     end
     if length(x) >= 2

@@ -20,14 +20,23 @@ include(joinpath(@__DIR__, "common.jl"))
     """
     @test !lint_has_error_test(code2)
 
-    # Should NOT trigger - const ALL CAPS
+    # Should NOT trigger - in function scope
     code3 = """
+    global my_state::Int = 0
+    function set_state()
+        global my_state = 0
+    end
+    """
+    @test !lint_has_error_test(code3)
+
+    # Should NOT trigger - const ALL CAPS
+    code4 = """
     const MY_CONSTANT = 42
     """
     # Need rule
 
     # Should NOT trigger - const not all caps
-    code4 = """
+    code5 = """
     const my_constant = 42
     """
     # Need rule
