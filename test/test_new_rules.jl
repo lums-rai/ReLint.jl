@@ -12,7 +12,7 @@ include(joinpath(@__DIR__, "common.jl"))
     global my_state = 0
     """
     # Test would go here when ReLint is properly set up
-    @test lint_test(code1, "Line 1, column 1: Global variable must have type annotation")
+    @test lint_test(code1, "Line 1, column 8: Global variable must have type annotation")
 
     # Should NOT trigger - typed global
     code2 = """

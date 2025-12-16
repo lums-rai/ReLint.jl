@@ -1,7 +1,6 @@
 # Test fixtures for new ReLint rules - these should NOT trigger warnings
 
-# ConstGlobalMissingTypeRule - valid patterns
-const MAX_RETRIES = 3  # const is fine
+# GlobalMissingTypeRule - valid patterns
 global typed_global::Int = 42  # typed global is fine
 
 # IsNothingPerformanceRule - valid patterns

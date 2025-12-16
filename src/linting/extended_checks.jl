@@ -160,6 +160,7 @@ function check_all(
     # Do some cleaning
     headof(x) === :const && delete!(markers, :const)
     headof(x) === :function && delete!(markers, :function)
+    headof(x) === :global && delete!(markers, :global)
     headof(x) === :macrocall && delete!(markers, :macrocall)
     headof(x) === :macro && delete!(markers, :macro)
     typeof(x) == EXPR &&
@@ -916,6 +917,7 @@ function check(t::StringConcatenationRule, x::EXPR, markers::Dict{Symbol,String}
     generic_check(t, x, "hole_variable * \"LINT_STRING\"", msg)
 end
 
+# TODO: Add detection for const ALL_CAPS global variables
 function check(t::GlobalMissingTypeRule, x::EXPR, markers::Dict{Symbol,String})
     # Skip test files
     if haskey(markers, :filename)
@@ -923,25 +925,22 @@ function check(t::GlobalMissingTypeRule, x::EXPR, markers::Dict{Symbol,String})
         contains(markers[:filename], "test.jl") && return
     end
 
-    # Detect global assignments
-    if haskey(markers, :global) && length(x) >= 2
-        # Skip the global keyword (x[1]), look at the assignment (x[2])
+    if !haskey(markers, :global)
+        return
+    end
+    if length(x) >= 2
         assignment = x[2]
-
-        # Check if this is an assignment (headof contains "=")
-        head_str = string(headof(assignment))
-        if contains(head_str, "=") && length(assignment) >= 1
-            lhs = assignment[1]  # Left-hand side of assignment
-
-            # Check if lhs is just an identifier (no type annotation)
-            # If headof(lhs) === :IDENTIFIER, it's untyped
-            # If headof(lhs) contains "::", it's typed
-            if headof(lhs) === :IDENTIFIER
-                # This is an untyped global like: global x = value
-                msg = "Global variable must have type annotation: `global x::Type = value`. Use `const` for immutable globals. [Explanation](https://github.com/RelationalAI/RAIStyle#global-variables)"
-                seterror!(x, LintRuleReport(t, msg))
+        if headof(assignment) == :OPERATOR && assignment.val == "="
+            lhs = x[1]
+            if (length(lhs) >= 2)
+                type_annotation = headof(lhs)
+                if (headof(type_annotation) == :OPERATOR && type_annotation.val == "::")
+                    return
+                end
             end
-            # If headof(lhs) contains "::", it's typed - OK, don't error
+             msg = "Global variable must have type annotation: `global x::Type = value`. Use `const` for immutable globals. [Explanation](https://github.com/RelationalAI/RAIStyle#global-variables)"
+                seterror!(x, LintRuleReport(t, msg))
+
         end
     end
 end

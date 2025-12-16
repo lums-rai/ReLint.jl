@@ -1,6 +1,6 @@
 # Test fixtures for new ReLint rules - these should trigger warnings
 
-# ConstGlobalMissingTypeRule violations
+# GlobalMissingTypeRule violations
 global untyped_global = 42  # Should warn: needs type annotation
 
 # IsNothingPerformanceRule violations (in Compiler code)
