@@ -113,6 +113,10 @@ function check_all(
         markers[:function] = fetch_value(x, :IDENTIFIER)
     end
 
+    if headof(x) === :global
+        markers[:global] = fetch_value(x, :IDENTIFIER)
+    end
+
     if headof(x) === :macro
         markers[:macro] = fetch_value(x, :IDENTIFIER)
     end
@@ -363,8 +367,7 @@ struct BareUsingRule <: ViolationLintRule end
 struct UntypedArrayComprehensionRule <: ViolationLintRule end
 struct ReturnTypeAnnotationRule <: RecommendationLintRule end
 struct StringConcatenationRule <: RecommendationLintRule end
-struct NoGlobalVariablesRule <: RecommendationLintRule end
-struct ConstGlobalMissingTypeRule <: ViolationLintRule end
+struct GlobalMissingTypeRule <: ViolationLintRule end
 struct IsNothingPerformanceRule <: RecommendationLintRule end
 struct MissingAutoHashEqualsRule <: RecommendationLintRule end
 struct NotFullyParameterizedConstructorRule <: ViolationLintRule end
@@ -913,21 +916,7 @@ function check(t::StringConcatenationRule, x::EXPR, markers::Dict{Symbol,String}
     generic_check(t, x, "hole_variable * \"LINT_STRING\"", msg)
 end
 
-function check(t::NoGlobalVariablesRule, x::EXPR, markers::Dict{Symbol,String})
-    # Skip test files
-    if haskey(markers, :filename)
-        contains(markers[:filename], "test/") && return
-        contains(markers[:filename], "test.jl") && return
-    end
-
-    msg = "Avoid non-const global variables. Use `const` for immutable globals or pass values as function arguments. [Explanation](https://github.com/RelationalAI/RAIStyle?tab=readme-ov-file#global-variables)."
-
-    # Pattern: global variable assignment without const
-    # Matches: x = value, global x = value
-    generic_check(t, x, "global hole_variable = hole_variable", msg)
-end
-
-function check(t::ConstGlobalMissingTypeRule, x::EXPR, markers::Dict{Symbol,String})
+function check(t::GlobalMissingTypeRule, x::EXPR, markers::Dict{Symbol,String})
     # Skip test files
     if haskey(markers, :filename)
         contains(markers[:filename], "test/") && return
@@ -935,11 +924,8 @@ function check(t::ConstGlobalMissingTypeRule, x::EXPR, markers::Dict{Symbol,Stri
     end
 
     # Detect global assignments
-    # AST structure from debug: global keyword followed by assignment
-    # global untyped = val: x[1] = GLOBAL, x[2] = (= IDENTIFIER val)
-    # global typed::T = val: x[1] = GLOBAL, x[2] = (= (:: IDENTIFIER T) val)
-    if headof(x) === :global && length(x) >= 2
-        # Skip the GLOBAL keyword (x[1]), look at the assignment (x[2])
+    if haskey(markers, :global) && length(x) >= 2
+        # Skip the global keyword (x[1]), look at the assignment (x[2])
         assignment = x[2]
 
         # Check if this is an assignment (headof contains "=")

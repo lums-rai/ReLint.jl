@@ -6,25 +6,31 @@ using ReLint
 # Include common test utilities
 include(joinpath(@__DIR__, "common.jl"))
 
-@testset "ConstGlobalMissingTypeRule" begin
+@testset "GlobalMissingTypeRule" begin
     # Should trigger warning - untyped global
     code1 = """
     global my_state = 0
     """
     # Test would go here when ReLint is properly set up
-    # @test check_violations(code1, ConstGlobalMissingTypeRule) > 0
+    @test lint_test(code1, "Line 1, column 1: Global variable must have type annotation")
 
     # Should NOT trigger - typed global
     code2 = """
     global my_state::Int = 0
     """
-    # @test check_violations(code2, ConstGlobalMissingTypeRule) == 0
+    @test !lint_has_error_test(code2)
 
-    # Should NOT trigger - const
+    # Should NOT trigger - const ALL CAPS
     code3 = """
     const MY_CONSTANT = 42
     """
-    # @test check_violations(code3, ConstGlobalMissingTypeRule) == 0
+    # Need rule
+
+    # Should NOT trigger - const not all caps
+    code4 = """
+    const my_constant = 42
+    """
+    # Need rule
 end
 
 @testset "IsNothingPerformanceRule" begin
@@ -339,7 +345,7 @@ end
     # Check that new rules are in the rule list
     all_rule_names = string.(nameof.(ReLint.all_rules()))
 
-    @test "ConstGlobalMissingTypeRule" in all_rule_names
+    @test "GlobalMissingTypeRule" in all_rule_names
     @test "IsNothingPerformanceRule" in all_rule_names
     @test "MissingAutoHashEqualsRule" in all_rule_names
     @test "NotFullyParameterizedConstructorRule" in all_rule_names
