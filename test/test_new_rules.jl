@@ -7,11 +7,64 @@ using ReLint
 include(joinpath(@__DIR__, "common.jl"))
 
 @testset "GlobalMissingTypeRule" begin
+    codea = """
+    global my_state = 0
+    """
+    @test lint_has_error_test(codea)
+
+    codeb = """
+    global my_state::Int = 0
+    """
+    @test !lint_has_error_test(codeb)
+
+    codec = """
+    global my_state::Int = 0
+    my_state = 5
+    """
+    @test !lint_has_error_test(codec)
+
+    coded = """
+    global my_state::Int = 0
+    global my_state = 5
+    """
+    @test lint_has_error_test(coded)
+
+    codee = """
+    global my_state::Int = 0
+    my_state = 5
+    """
+    @test !lint_has_error_test(codee)
+
+    codef = """
+    global my_state::Int = 0
+    my_state = 5
+    """
+    @test !lint_has_error_test(codef)
+
+    codeg = """
+    global my_state::Int = 0
+    my_state::Int = 5
+    """
+    @test !lint_has_error_test(codeg)
+
+    codeh = """
+    begin
+      global my_state::Int = 0
+    end
+    """
+    @test !lint_has_error_test(codeh)
+
+    codei = """
+    begin
+      global my_state = 0
+    end
+    """
+    @test lint_has_error_test(codei)
+
     # Should trigger warning - untyped global
     code1 = """
     global my_state = 0
     """
-    # Test would go here when ReLint is properly set up
     @test lint_test(code1, "Line 1, column 8: Global variable must have type annotation")
 
     # Should NOT trigger - typed global
@@ -29,14 +82,23 @@ include(joinpath(@__DIR__, "common.jl"))
     """
     @test !lint_has_error_test(code3)
 
-    # Should NOT trigger - const ALL CAPS
+    # Should trigger - untyped global
     code4 = """
+    global my_state = 0
+    function set_state()
+        global my_state = 0
+    end
+    """
+    @test lint_test(code4, "Line 1, column 8: Global variable must have type annotation")
+
+    # Should NOT trigger - const ALL CAPS
+    code5 = """
     const MY_CONSTANT = 42
     """
     # Need rule
 
     # Should NOT trigger - const not all caps
-    code5 = """
+    code6 = """
     const my_constant = 42
     """
     # Need rule
